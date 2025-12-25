@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { CheckIcon, ErrorIcon, WarningIcon } from './icons';
 
@@ -6,25 +7,26 @@ interface ReportDisplayProps {
 }
 
 const ReportDisplay: React.FC<ReportDisplayProps> = ({ content }) => {
-  // Remove markdown backticks and <br> tags if they exist
+  // Clean content and handle bold markers in headers
   const cleanedContent = content
     .replace(/^```markdown\n/, '')
     .replace(/\n```$/, '')
     .replaceAll(/<br\s*\/?>/gi, '\n');
 
   const sections = cleanedContent.split('\n\n');
-  const gradeSection = sections.find(s => s.startsWith('Detected grade:'));
-  const mismatchWarningSection = sections.find(s => s.startsWith('⚠️ **CẢNH BÁO:'));
-  const reportHeader = sections.find(s => s.startsWith('🧾 **BÁO CÁO DUYỆT ĐỀ**'));
-  const tableSection = sections.find(s => s.startsWith('| Hạng mục'));
-  const suggestionsSection = sections.find(s => s.startsWith('💡 **Gợi ý chỉnh sửa:**'));
+  const gradeSection = sections.find(s => s.toLowerCase().includes('detected grade:'));
+  const mismatchWarningSection = sections.find(s => s.includes('⚠️') && s.includes('CẢNH BÁO'));
+  const reportHeader = sections.find(s => s.includes('🧾') && s.includes('BÁO CÁO DUYỆT ĐỀ'));
+  const tableSection = sections.find(s => s.includes('| Hạng mục'));
+  const suggestionsSection = sections.find(s => s.includes('💡') && s.includes('Gợi ý chỉnh sửa'));
 
   if (!reportHeader || !tableSection || !suggestionsSection) {
-    // Fallback for unexpected format: render as pre-formatted text
     return (
       <div className="prose prose-slate max-w-none">
-        <h2 className="text-2xl font-bold text-slate-800 mb-4">Báo cáo phân tích</h2>
-        <pre className="whitespace-pre-wrap bg-slate-50 p-4 rounded-lg text-sm">{content}</pre>
+        <h2 className="text-2xl font-bold text-slate-800 mb-4 border-b pb-2 text-blue-600">Báo cáo phân tích</h2>
+        <div className="whitespace-pre-wrap bg-slate-50 p-6 rounded-xl text-slate-700 leading-relaxed border border-slate-200">
+          {cleanedContent}
+        </div>
       </div>
     );
   }
@@ -32,20 +34,17 @@ const ReportDisplay: React.FC<ReportDisplayProps> = ({ content }) => {
   // Parse Mismatch Warning
   let mismatchDetails: Record<string, string> = {};
   if (mismatchWarningSection) {
-      const mismatchLines = mismatchWarningSection.split('\n').slice(1); // Skip the title
-      mismatchDetails = mismatchLines.reduce((acc, line) => {
-          const match = line.match(/- \*\*(.*?):\*\* (.*)/);
-          if (match) {
-              acc[match[1].trim()] = match[2].trim();
-          }
-          return acc;
-      }, {} as Record<string, string>);
+      const lines = mismatchWarningSection.split('\n');
+      lines.forEach(line => {
+          const match = line.match(/[-*]\s+\*\*(.*?):\*\*\s+(.*)/);
+          if (match) mismatchDetails[match[1].trim()] = match[2].trim();
+      });
   }
 
   // Parse table
-  const tableRows = tableSection.split('\n').slice(2); // Skip header and separator
-  const tableData = tableRows.map(row => {
-    const columns = row.split('|').map(c => c.trim()).slice(1, -1); // Remove empty start/end columns
+  const tableRows = tableSection.split('\n').filter(l => l.includes('|') && !l.includes('---'));
+  const tableData = tableRows.slice(1).map(row => {
+    const columns = row.split('|').map(c => c.trim()).slice(1, -1);
     return {
       category: columns[0] || '',
       analysis: columns[1] || '',
@@ -54,92 +53,109 @@ const ReportDisplay: React.FC<ReportDisplayProps> = ({ content }) => {
   });
   
   // Parse report header details
-  const reportHeaderLines = reportHeader.split('\n').slice(1);
-  const reportDetails = reportHeaderLines.reduce((acc, line) => {
-      const match = line.match(/- \*\*(.*?):\*\* (.*)/);
-      if (match) {
-        acc[match[1].trim()] = match[2].trim();
-      }
-      return acc;
-  }, {} as Record<string, string>);
+  let reportDetails: Record<string, string> = {};
+  if (reportHeader) {
+      const lines = reportHeader.split('\n');
+      lines.forEach(line => {
+          const match = line.match(/[-*]\s+\*\*(.*?):\*\*\s+(.*)/);
+          if (match) reportDetails[match[1].trim()] = match[2].trim();
+      });
+  }
 
   // Parse suggestions
-  const suggestions = suggestionsSection.split('\n').slice(1).map(s => s.replace(/^- /, ''));
+  const suggestions = suggestionsSection.split('\n').slice(1).map(s => s.replace(/^[-*]\s+/, '').trim());
 
   const renderResultIcon = (result: string) => {
-    switch (result.trim()) {
-      case '✓':
-        return <CheckIcon />;
-      case '⚠️':
-        return <WarningIcon />;
-      case '✗':
-        return <ErrorIcon />;
-      default:
-        return <span className="text-sm font-semibold">{result}</span>;
-    }
+    const r = result.trim();
+    if (r.includes('✓')) return <CheckIcon />;
+    if (r.includes('⚠️')) return <WarningIcon />;
+    if (r.includes('✗')) return <ErrorIcon />;
+    return <span className="text-sm font-semibold text-slate-500">{r || 'N/A'}</span>;
   };
 
-  const MismatchWarning = () => (
-    <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-8 rounded-r-lg" role="alert">
-      <div className="flex">
-        <div className="py-1">
-          <svg className="h-6 w-6 text-yellow-500 mr-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-            <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.21 3.03-1.742 3.03H4.42c-1.532 0-2.492-1.696-1.742-3.03l5.58-9.92zM10 13a1 1 0 110-2 1 1 0 010 2zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-          </svg>
-        </div>
-        <div>
-          <p className="font-bold text-yellow-800">Cảnh báo: Nội dung không phù hợp với lớp đã chọn</p>
-          <div className="text-sm text-yellow-700 space-y-1 mt-1">
-             {mismatchDetails['Lớp đã chọn'] && <p><span className="font-semibold">Lớp đã chọn:</span> {mismatchDetails['Lớp đã chọn']}</p>}
-             {mismatchDetails['Lớp đề xuất'] && <p><span className="font-semibold">Lớp đề xuất:</span> {mismatchDetails['Lớp đề xuất']}</p>}
-             {mismatchDetails['Lý do'] && <p><span className="font-semibold">Lý do:</span> {mismatchDetails['Lý do']}</p>}
+  return (
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      {mismatchWarningSection && (
+        <div className="bg-amber-50 border-l-4 border-amber-400 p-5 rounded-r-xl shadow-sm" role="alert">
+          <div className="flex">
+            <div className="flex-shrink-0">
+              <svg className="h-6 w-6 text-amber-500" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.21 3.03-1.742 3.03H4.42c-1.532 0-2.492-1.696-1.742-3.03l5.58-9.92zM10 13a1 1 0 110-2 1 1 0 010 2zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <div className="ml-3">
+              <h3 className="text-lg font-bold text-amber-800">Cảnh báo: Nội dung không phù hợp</h3>
+              <div className="text-sm text-amber-700 space-y-1 mt-1">
+                 {Object.entries(mismatchDetails).map(([key, val]) => (
+                   <p key={key}><span className="font-bold">{key}:</span> {val}</p>
+                 ))}
+              </div>
+            </div>
           </div>
         </div>
-      </div>
-    </div>
-  );
-
-  return (
-    <div className="space-y-8">
-      {mismatchWarningSection && <MismatchWarning />}
+      )}
       
       <div>
-        <h2 className="text-3xl font-extrabold text-slate-800 mb-2">Báo cáo duyệt đề</h2>
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-slate-600">
-            {reportDetails['Môn học'] && <p><span className="font-semibold">Môn học:</span> {reportDetails['Môn học']}</p>}
-            {reportDetails['Chương trình'] && <p><span className="font-semibold">Chương trình:</span> {reportDetails['Chương trình']}</p>}
-            {reportDetails['Lớp'] && <p><span className="font-semibold">Lớp:</span> {reportDetails['Lớp']}</p>}
+        <h2 className="text-3xl font-extrabold text-slate-800 mb-4 flex items-center gap-2">
+          <span className="text-blue-600">🧾</span> Báo cáo duyệt đề
+        </h2>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
+            <div className="flex flex-col">
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Môn học</span>
+              <span className="text-slate-700 font-medium">{reportDetails['Môn học'] || 'Tiếng Anh'}</span>
+            </div>
+            <div className="flex flex-col">
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Chương trình</span>
+              <span className="text-slate-700 font-medium">{reportDetails['Chương trình'] || 'Global Success'}</span>
+            </div>
+            <div className="flex flex-col">
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Lớp</span>
+              <span className="text-slate-700 font-medium">{reportDetails['Lớp'] || 'Chưa xác định'}</span>
+            </div>
         </div>
-        {gradeSection && <p className="text-sm text-slate-500 mt-1">{gradeSection.replace('Detected grade:', 'Ghi chú từ AI:')}</p>}
+        {gradeSection && (
+          <p className="text-xs text-slate-500 mt-3 italic flex items-center gap-1">
+            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"></path></svg>
+            {gradeSection.replace(/detected grade:/i, 'Ghi chú AI:')}
+          </p>
+        )}
       </div>
 
-      <div className="overflow-x-auto">
+      <div className="overflow-hidden rounded-xl border border-slate-200 shadow-sm">
         <table className="w-full text-left border-collapse">
-          <thead className="bg-slate-100">
+          <thead className="bg-slate-100 border-b border-slate-200">
             <tr>
-              <th className="p-4 font-bold text-slate-700 border-b-2 border-slate-200">Hạng mục</th>
-              <th className="p-4 font-bold text-slate-700 border-b-2 border-slate-200">Phân tích</th>
-              <th className="p-4 font-bold text-slate-700 border-b-2 border-slate-200 text-center">Kết quả</th>
+              <th className="p-4 font-bold text-slate-700 w-1/4">Hạng mục</th>
+              <th className="p-4 font-bold text-slate-700 w-1/2">Phân tích chi tiết</th>
+              <th className="p-4 font-bold text-slate-700 text-center w-1/4">Đánh giá</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-slate-100">
             {tableData.map((row, index) => (
-              <tr key={index} className="border-b border-slate-200 hover:bg-slate-50">
-                <td className="p-4 font-semibold text-slate-800 align-top w-1/4">{row.category}</td>
-                <td className="p-4 text-slate-600 align-top w-1/2">{row.analysis}</td>
-                <td className="p-4 text-center align-top w-1/4">{renderResultIcon(row.result)}</td>
+              <tr key={index} className="bg-white hover:bg-slate-50/50 transition-colors">
+                <td className="p-4 font-bold text-slate-800 align-top">{row.category}</td>
+                <td className="p-4 text-slate-600 align-top text-sm leading-relaxed">{row.analysis}</td>
+                <td className="p-4 text-center align-top">{renderResultIcon(row.result)}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
 
-      <div>
-        <h3 className="text-2xl font-bold text-slate-800 mb-3">💡 Gợi ý chỉnh sửa</h3>
-        <ul className="list-disc list-inside space-y-2 text-slate-700">
-          {suggestions.filter(s => s.trim()).map((suggestion, index) => (
-            <li key={index}>{suggestion}</li>
+      <div className="bg-blue-50/50 p-6 rounded-2xl border border-blue-100">
+        <h3 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
+          <span className="text-yellow-500">💡</span> Gợi ý chỉnh sửa chuyên môn
+        </h3>
+        <ul className="space-y-3">
+          {suggestions.filter(s => s.length > 0).map((suggestion, index) => (
+            <li key={index} className="flex gap-3 text-slate-700 items-start">
+              <span className="text-blue-500 font-bold">•</span>
+              <span className="text-sm leading-relaxed">{suggestion}</span>
+            </li>
           ))}
+          {suggestions.filter(s => s.length > 0).length === 0 && (
+            <li className="text-slate-500 italic text-sm">Đề thi đã được chuẩn bị tốt, không có gợi ý chỉnh sửa thêm.</li>
+          )}
         </ul>
       </div>
     </div>

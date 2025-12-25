@@ -1,8 +1,5 @@
+
 import { GoogleGenAI } from "@google/genai";
-
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
-const model = 'gemini-2.5-flash';
 
 const getSystemPrompt = (grade: string | null, hasAnswerKey: boolean) => {
   let gradeInstruction = '';
@@ -67,8 +64,12 @@ Analyze the provided content and generate the report. Be concise, professional, 
 
 export const reviewTest = async (testContent: string, answerKeyContent: string, grade: string | null): Promise<string> => {
   if (!testContent.trim()) {
-    throw new Error('Please provide the test content to review.');
+    throw new Error('Vui lòng cung cấp nội dung đề thi để duyệt.');
   }
+
+  // Khởi tạo instance mới mỗi lần gọi để đảm bảo lấy đúng API KEY từ môi trường
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const modelName = 'gemini-3-pro-preview';
 
   const hasAnswerKey = !!answerKeyContent.trim();
 
@@ -84,16 +85,24 @@ ${hasAnswerKey ? answerKeyContent : 'No answer key provided.'}
 
   try {
     const response = await ai.models.generateContent({
-      model: model,
-      contents: combinedContent,
+      model: modelName,
+      contents: [{ parts: [{ text: combinedContent }] }],
       config: {
         systemInstruction: getSystemPrompt(grade, hasAnswerKey),
+        thinkingConfig: { thinkingBudget: 4000 } // Thêm khả năng suy nghĩ cho phân tích sư phạm sâu
       }
     });
 
+    if (!response.text) {
+      throw new Error("AI không trả về kết quả. Vui lòng thử lại.");
+    }
+
     return response.text;
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error calling Gemini API:", error);
-    throw new Error("Failed to get a review from the AI. Please check your connection, then try again.");
+    if (error.message?.includes("API_KEY")) {
+      throw new Error("Lỗi API Key. Vui lòng kiểm tra cấu hình.");
+    }
+    throw new Error(`Lỗi phân tích: ${error.message || "Không thể kết nối với AI. Vui lòng kiểm tra mạng."}`);
   }
 };
